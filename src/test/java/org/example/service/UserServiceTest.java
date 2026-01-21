@@ -29,6 +29,9 @@ class UserServiceTest {
     @Mock
     private UserRepository userRepository;
 
+    @Mock
+    private KafkaProducerService kafkaProducerService;
+
     @InjectMocks
     private UserService userService;
 
@@ -53,6 +56,7 @@ class UserServiceTest {
     void createUser_ShouldReturnUserDto() {
         when(userRepository.existsByEmail(createUserDto.getEmail())).thenReturn(false);
         when(userRepository.save(any(User.class))).thenReturn(user);
+        doNothing().when(kafkaProducerService).sendUserEvent(anyString(), anyString());
 
         UserDto result = userService.createUser(createUserDto);
 
@@ -64,6 +68,7 @@ class UserServiceTest {
 
         verify(userRepository, times(1)).existsByEmail(createUserDto.getEmail());
         verify(userRepository, times(1)).save(any(User.class));
+        verify(kafkaProducerService, times(1)).sendUserEvent("CREATE", user.getEmail());
     }
 
     @Test
@@ -169,24 +174,27 @@ class UserServiceTest {
 
     @Test
     void deleteUser_ShouldDeleteUser() {
-        when(userRepository.existsById(1L)).thenReturn(true);
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
         doNothing().when(userRepository).deleteById(1L);
+        doNothing().when(kafkaProducerService).sendUserEvent(anyString(), anyString());
 
         userService.deleteUser(1L);
 
-        verify(userRepository, times(1)).existsById(1L);
+        verify(userRepository, times(1)).findById(1L);
         verify(userRepository, times(1)).deleteById(1L);
+        verify(kafkaProducerService, times(1)).sendUserEvent("DELETE", user.getEmail());
     }
 
     @Test
     void deleteUser_WithNonExistentId_ShouldThrowException() {
-        when(userRepository.existsById(999L)).thenReturn(false);
+        when(userRepository.findById(999L)).thenReturn(Optional.empty());
 
         UserNotFoundException exception = assertThrows(UserNotFoundException.class,
                 () -> userService.deleteUser(999L));
 
         assertEquals("User with id 999 not found", exception.getMessage());
-        verify(userRepository, times(1)).existsById(999L);
+        verify(userRepository, times(1)).findById(999L);
         verify(userRepository, never()).deleteById(anyLong());
+        verify(kafkaProducerService, never()).sendUserEvent(anyString(), anyString());
     }
 }
