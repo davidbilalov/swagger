@@ -18,9 +18,11 @@ import java.util.stream.Collectors;
 public class UserService {
 
     private final UserRepository userRepository;
+    private final KafkaProducerService kafkaProducerService;
 
-    public UserService(UserRepository userRepository) {
+    public UserService(UserRepository userRepository, KafkaProducerService kafkaProducerService) {
         this.userRepository = userRepository;
+        this.kafkaProducerService = kafkaProducerService;
     }
 
     public UserDto createUser(CreateUserDto createUserDto) {
@@ -34,6 +36,9 @@ public class UserService {
         user.setAge(createUserDto.getAge());
 
         User savedUser = userRepository.save(user);
+
+        kafkaProducerService.sendUserEvent("CREATE", savedUser.getEmail());
+        
         return convertToDto(savedUser);
     }
 
@@ -74,10 +79,13 @@ public class UserService {
     }
 
     public void deleteUser(Long id) {
-        if (!userRepository.existsById(id)) {
-            throw new UserNotFoundException(id);
-        }
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new UserNotFoundException(id));
+        
+        String email = user.getEmail();
         userRepository.deleteById(id);
+
+        kafkaProducerService.sendUserEvent("DELETE", email);
     }
 
     private UserDto convertToDto(User user) {
