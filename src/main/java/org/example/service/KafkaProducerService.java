@@ -1,5 +1,6 @@
 package org.example.service;
 
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import org.example.dto.UserEventDto;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,20 +22,27 @@ public class KafkaProducerService {
         this.topicName = "user-events";
     }
 
+    @CircuitBreaker(name = "kafkaProducer", fallbackMethod = "sendUserEventFallback")
     public void sendUserEvent(String operation, String email) {
         UserEventDto event = new UserEventDto(operation, email);
-        
-        CompletableFuture<SendResult<String, UserEventDto>> future = 
+
+        CompletableFuture<SendResult<String, UserEventDto>> future =
             kafkaTemplate.send(topicName, email, event);
 
         future.whenComplete((result, exception) -> {
             if (exception == null) {
-                logger.info("Sent message=[{}] with offset=[{}]", 
+                logger.info("Sent message=[{}] with offset=[{}]",
                     event, result.getRecordMetadata().offset());
             } else {
-                logger.error("Unable to send message=[{}] due to : {}", 
+                logger.error("Unable to send message=[{}] due to : {}",
                     event, exception.getMessage());
             }
         });
+    }
+
+    @SuppressWarnings("unused")
+    private void sendUserEventFallback(String operation, String email, Throwable throwable) {
+        logger.error("Circuit breaker fallback triggered for Kafka event. Operation={}, email={}, reason={}",
+                operation, email, throwable.getMessage());
     }
 }
